@@ -11,7 +11,7 @@ from django.utils.html import escape
 import logging
 
 logger = logging.getLogger(__name__)
-from ..models import UserDetails, BookingDetails, VendorChat, VerificationDetails, CalendarEvent, VendorService
+from ..models import UserDetails, BookingDetails, VendorChat, VerificationDetails, CalendarEvent, VendorService, ProfileDetails
 from .serializers import (
     VendorRegistrationSerializer, VendorLoginSerializer, VendorProfileSerializer,
     BookingSerializer, BookingStatusUpdateSerializer, VendorChatSerializer,
@@ -52,6 +52,16 @@ class VendorRegistrationView(generics.CreateAPIView):
         except Exception as e:
             logger.error(f"API: Unexpected error during registration: {e}")
             return Response({'error': 'Registration failed'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+def check_email_exists(request):
+    email = request.data.get('email')
+    if not email:
+        return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    exists = UserDetails.objects.filter(email=email).exists()
+    return Response({'exists': exists})
 
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])
@@ -106,6 +116,17 @@ class VendorProfileView(generics.RetrieveUpdateAPIView):
         if not vendor:
             return Response({'error': 'No vendor found'}, status=status.HTTP_400_BAD_REQUEST)
         
+        # Handle profile image upload
+        if 'profile_image' in request.FILES:
+            profile, created = ProfileDetails.objects.get_or_create(user=vendor)
+            profile.profile_image = request.FILES['profile_image']
+            profile.save()
+            
+            # Return updated profile data
+            serializer = self.get_serializer(vendor)
+            return Response(serializer.data)
+        
+        # Handle other profile updates
         serializer = self.get_serializer(vendor, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
@@ -301,44 +322,32 @@ class VendorServiceDetailView(generics.RetrieveUpdateDestroyAPIView):
             logger.info(f"User: {request.user.email}")
             logger.info(f"Service ID: {kwargs.get('pk')}")
             logger.info(f"Request data: {request.data}")
-            logger.info(f"Request method: {request.method}")
+            logger.info(f"Request FILES: {request.FILES}")
             
-            # Get the service before update
             service = self.get_object()
             logger.info(f"BEFORE UPDATE - Service: {service.service_name}, Price: {service.service_price}")
             
-            # Validate serializer
+            # Handle image upload
+            if 'image' in request.FILES:
+                service.image = request.FILES['image']
+                service.save()
+                logger.info(f"Service image updated: {service.image}")
+                return Response(VendorServiceSerializer(service).data)
+            
+            # Handle other updates
             serializer = self.get_serializer(service, data=request.data, partial=True)
             if not serializer.is_valid():
                 logger.error(f"Serializer validation failed: {serializer.errors}")
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
-            # Save the update
             serializer.save()
-            
-            # Get the service after update
             service.refresh_from_db()
             logger.info(f"AFTER UPDATE - Service: {service.service_name}, New Price: {service.service_price}")
-            logger.info(f"=== UPDATE COMPLETE ===")
             
             return Response(serializer.data)
-        except IntegrityError as e:
-            logger.error(f"IntegrityError in service update: {e}")
-            if 'duplicate key value violates unique constraint' in str(e):
-                return Response(
-                    {'error': 'Service with this name already exists for your account'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            return Response(
-                {'error': 'Database error occurred'}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
         except Exception as e:
             logger.error(f"Service update error: {e}")
-            return Response(
-                {'error': 'Failed to update service'}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return Response({'error': 'Failed to update service'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class CalendarEventDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = CalendarEventSerializer
@@ -346,6 +355,36 @@ class CalendarEventDetailView(generics.RetrieveUpdateDestroyAPIView):
     
     def get_queryset(self):
         return CalendarEvent.objects.filter(vendor=self.request.user)
+
+class VendorDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = VendorProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        return UserDetails.objects.all()
+    
+    def update(self, request, *args, **kwargs):
+        try:
+            vendor = self.get_object()
+            logger.info(f"Updating vendor: {vendor.email}")
+            
+            # Handle profile image upload
+            if 'profile_image' in request.FILES:
+                profile, created = ProfileDetails.objects.get_or_create(user=vendor)
+                profile.profile_image = request.FILES['profile_image']
+                profile.save()
+                logger.info(f"Profile image updated for vendor: {vendor.email}")
+                return Response(VendorProfileSerializer(vendor).data)
+            
+            # Handle other profile updates
+            serializer = self.get_serializer(vendor, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            
+            return Response(serializer.data)
+        except Exception as e:
+            logger.error(f"Vendor update error: {e}")
+            return Response({'error': 'Failed to update vendor'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class VendorListView(generics.ListAPIView):
     serializer_class = VendorProfileSerializer

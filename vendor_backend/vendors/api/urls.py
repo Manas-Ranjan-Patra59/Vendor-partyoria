@@ -4,6 +4,7 @@ from . import views
 urlpatterns = [
     # Authentication
     path('auth/register/', views.VendorRegistrationView.as_view(), name='vendor-register'),
+    path('auth/check-email/', views.check_email_exists, name='check-email'),
     path('auth/login/', views.vendor_login, name='vendor-login'),
     path('auth/logout/', views.vendor_logout, name='vendor-logout'),
     path('auth/profile/', views.VendorProfileView.as_view(), name='vendor-profile'),
@@ -33,4 +34,5 @@ urlpatterns = [
     
     # Vendors List
     path('vendors/', views.VendorListView.as_view(), name='vendors-list'),
+    path('vendors/<int:pk>/', views.VendorDetailView.as_view(), name='vendor-detail'),
 ]

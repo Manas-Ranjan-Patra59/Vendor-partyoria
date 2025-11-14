@@ -91,11 +91,12 @@ class VendorProfileSerializer(serializers.ModelSerializer):
     services = serializers.SerializerMethodField()
     location = serializers.SerializerMethodField()
     city = serializers.SerializerMethodField()
+    profile_image = serializers.SerializerMethodField()
     
     class Meta:
         model = UserDetails
         fields = ['id', 'email', 'full_name', 'mobile', 'business', 'experience_level', 
-                 'is_online', 'is_verified', 'services', 'location', 'city', 'created_at']
+                 'is_online', 'is_verified', 'services', 'location', 'city', 'profile_image', 'created_at']
         read_only_fields = ['id', 'email', 'created_at']
     
     def get_is_verified(self, obj):
@@ -117,13 +118,34 @@ class VendorProfileSerializer(serializers.ModelSerializer):
         except:
             return None
     
+    def get_profile_image(self, obj):
+        try:
+            if hasattr(obj, 'profile') and obj.profile.profile_image:
+                return obj.profile.profile_image.url
+            return None
+        except:
+            return None
+    
     def get_services(self, obj):
         vendor_services = VendorService.objects.filter(user=obj, is_active=True)
-        return [{
-            'name': service.service_name,
-            'price': service.service_price,
-            'description': service.description
-        } for service in vendor_services]
+        services_data = []
+        for service in vendor_services:
+            service_data = {
+                'id': service.id,
+                'service_name': service.service_name,
+                'name': service.service_name,
+                'category': service.category,
+                'service_price': float(service.service_price) if service.service_price else 0,
+                'price': float(service.service_price) if service.service_price else 0,
+                'minimum_people': service.minimum_people,
+                'maximum_people': service.maximum_people,
+                'description': service.description,
+                'image': service.image.url if service.image else None,
+                'is_active': service.is_active
+            }
+            print(f"Service: {service.service_name}, Price: {service.service_price}, Data: {service_data}")
+            services_data.append(service_data)
+        return services_data
 
 class BookingSerializer(serializers.ModelSerializer):
     class Meta:
